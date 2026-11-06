@@ -241,11 +241,10 @@ def build_message(
         old = previous.get(str(station["id"]))
         if isinstance(old, (int, float)):
             diff = round(p["price"] - old, 3)
-            # Telegram non colora il testo: il colore lo danno le emoji.
             if diff > 0:
-                line += f"{GAP}🟥 ▲ +{fmt_price(diff)}"
+                line += f"{GAP}▲ +{fmt_price(diff)}"
             elif diff < 0:
-                line += f"{GAP}🟩 ▼ -{fmt_price(-diff)}"
+                line += f"{GAP}▼ -{fmt_price(-diff)}"
         block = f"{mark} <b>{name}</b>\n{pad}{line}"
         if p["date"]:
             stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
