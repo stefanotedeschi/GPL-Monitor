@@ -147,7 +147,7 @@ def price_from_api(station_id: str) -> dict | None:
     for fuel in data.get("fuels") or []:
         if not is_gpl(str(fuel.get("name", ""))):
             continue
-        when = parse_date(str(fuel.get("insertDate") or fuel.get("validityDate") or ""))
+        when = parse_date(str(fuel.get("validityDate") or fuel.get("insertDate") or ""))
         cand = {"price": float(fuel["price"]), "date": when}
         if best is None or (when and (best["date"] is None or when > best["date"])):
             best = cand
@@ -210,7 +210,7 @@ def build_message(results: list[tuple[dict, dict | None]]) -> str:
         date = p["date"].strftime("%d/%m %H:%M") if p["date"] else "n.d."
         lines.append(
             f"{mark} <b>{name}</b>: {price} €/l\n"
-            f"    <i>aggiornato il {date}</i>"
+            f"    <i>in vigore dal {date}</i>"
         )
     return "\n".join(lines)
 
