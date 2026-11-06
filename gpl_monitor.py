@@ -30,7 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_CSV = "https://www.mimit.gov.it/images/exportCSV/"
@@ -39,6 +39,8 @@ PREZZI_URL = BASE_CSV + "prezzo_alle_8.csv"
 API_URL = "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/{id}"
 STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
+GAP = "\u2003\u2003"  # spazio tra prezzo e variazione (em space, non viene compresso)
+STALE_DAYS = 7  # oltre questi giorni il prezzo è segnalato con ⏳
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
 
 
@@ -201,15 +203,26 @@ def html_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_message(results: list[tuple[dict, dict | None]]) -> str:
+def fmt_price(value: float) -> str:
+    return f"{value:.3f}".replace(".", ",")
+
+
+def build_message(
+    results: list[tuple[dict, dict | None]],
+    previous: dict[str, float] | None = None,
+    now: datetime | None = None,
+) -> str:
     """Messaggio nell'ordine di stations.json.
 
     🟢 prezzo più basso, 🔴 prezzo più alto, 🟡 gli altri (a parità di prezzo
     il pallino è lo stesso; se tutti i prezzi coincidono sono tutti verdi).
+    ▲/▼ variazione rispetto all'ultimo invio programmato (``previous``).
+    ⏳ prezzo in vigore da più di STALE_DAYS giorni.
     """
-    today = to_rome(datetime.now(timezone.utc).replace(tzinfo=None)).strftime("%d/%m/%Y")
+    previous = previous or {}
+    now = now or to_rome(datetime.now(timezone.utc).replace(tzinfo=None))
     pad = "      "
-    blocks = [f"⛽ <b>Prezzi GPL – {today}</b>"]
+    blocks = [f"⛽ <b>Prezzi GPL – {now.strftime('%d/%m/%Y')}</b>"]
     prices = [p["price"] for _, p in results if p]
     best = min(prices) if prices else None
     worst = max(prices) if prices else None
@@ -224,10 +237,18 @@ def build_message(results: list[tuple[dict, dict | None]]) -> str:
             mark = "🔴"
         else:
             mark = "🟡"
-        price = f"{p['price']:.3f}".replace(".", ",")
-        block = f"{mark} <b>{name}</b>\n{pad}<b>{price} €/l</b>"
+        line = f"<b>{fmt_price(p['price'])} €/l</b>"
+        old = previous.get(str(station["id"]))
+        if isinstance(old, (int, float)):
+            diff = round(p["price"] - old, 3)
+            if diff > 0:
+                line += f"{GAP}▲ +{fmt_price(diff)}"
+            elif diff < 0:
+                line += f"{GAP}▼ -{fmt_price(-diff)}"
+        block = f"{mark} <b>{name}</b>\n{pad}{line}"
         if p["date"]:
-            block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>"
+            stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
+            block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>{stale}"
         blocks.append(block)
     # Riga vuota tra un distributore e l'altro.
     return "\n\n".join(blocks)
@@ -288,7 +309,7 @@ def send_message(chat_id: int | str, text: str) -> None:
 # --------------------------------------------------------------------------- #
 # Prezzi -> messaggio
 # --------------------------------------------------------------------------- #
-def current_message() -> str:
+def collect_results() -> list[tuple[dict, dict | None]]:
     stations = json.loads(STATIONS_FILE.read_text(encoding="utf-8"))
     csv_prices: dict[str, dict] | None = None
     results: list[tuple[dict, dict | None]] = []
@@ -304,7 +325,31 @@ def current_message() -> str:
                     csv_prices = {}
             p = csv_prices.get(sid)
         results.append((st, p))
-    return build_message(results)
+    return results
+
+
+# --------------------------------------------------------------------------- #
+# Stato (prezzi dell'ultimo invio, per le frecce ▲/▼)
+# --------------------------------------------------------------------------- #
+def load_state(path: Path | None) -> dict[str, float]:
+    if not path or not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {str(k): float(v) for k, v in (data.get("prices") or {}).items()}
+    except Exception as exc:  # noqa: BLE001  (file corrotto: si riparte da zero)
+        print(f"[stato] ignoro {path}: {exc}", file=sys.stderr)
+        return {}
+
+
+def save_state(path: Path, results: list[tuple[dict, dict | None]], old: dict[str, float]) -> None:
+    prices = dict(old)  # chi oggi non ha prezzo mantiene l'ultimo noto
+    prices.update({str(st["id"]): p["price"] for st, p in results if p})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"saved_at": datetime.now(timezone.utc).isoformat(), "prices": prices}, indent=2),
+        encoding="utf-8",
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -350,11 +395,15 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="stampa il messaggio senza inviarlo")
     ap.add_argument("--find", nargs="+", metavar="TESTO", help="cerca distributori nell'anagrafica")
     ap.add_argument("--provincia", help="filtra la ricerca per sigla provincia (es. CN)")
+    ap.add_argument("--state", type=Path, help="file JSON con i prezzi dell'ultimo invio (per ▲/▼)")
+    ap.add_argument("--save-state", action="store_true", help="aggiorna --state con i prezzi di oggi")
     args = ap.parse_args()
     if args.find:
         cmd_find(args.find, args.provincia)
         return
-    text = current_message()
+    results = collect_results()
+    previous = load_state(args.state)
+    text = build_message(results, previous)
     print(text)
     if not args.dry_run:
         chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -365,6 +414,8 @@ def main() -> None:
         except TelegramError as exc:
             sys.exit(f"Errore Telegram {exc}")
         print("Messaggio inviato su Telegram.")
+    if args.save_state and args.state:
+        save_state(args.state, results, previous)
 
 
 if __name__ == "__main__":

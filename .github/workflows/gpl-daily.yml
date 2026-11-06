@@ -34,9 +34,25 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         with:
           persist-credentials: false
+      # Prezzi dell'ultimo invio programmato, per le frecce ▲/▼.
+      - name: Recupera prezzi precedenti
+        if: steps.gate.outputs.go == 'true'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: state/last_prices.json
+          key: gpl-state-${{ github.run_id }}
+          restore-keys: gpl-state-
       - name: Pubblica prezzi GPL
         if: steps.gate.outputs.go == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python3 gpl_monitor.py  # Python 3.12 già presente su ubuntu-latest
+          # Solo l'invio programmato aggiorna lo stato: le prove manuali non spostano il confronto.
+          SAVE_STATE: ${{ github.event_name == 'schedule' && '--save-state' || '' }}
+        run: python3 gpl_monitor.py --state state/last_prices.json $SAVE_STATE  # Python già presente su ubuntu-latest
+      - name: Salva prezzi di oggi
+        if: steps.gate.outputs.go == 'true' && github.event_name == 'schedule'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: state/last_prices.json
+          key: gpl-state-${{ github.run_id }}
