@@ -1,0 +1,18 @@
+name: test API MIMIT (temporaneo)
+on:
+  push:
+    branches: ["claude/**"]
+    paths: [".github/workflows/api-test.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: API ospzApi
+        run: |
+          for id in 37489 21783; do
+            curl -sS -m 30 -A "Mozilla/5.0" -w "\nHTTP %{http_code} in %{time_total}s\n" \
+              "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/$id" | head -c 1500; echo
+          done
+      - name: CSV (controllo)
+        if: always()
+        run: curl -sS -m 30 -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv || true
