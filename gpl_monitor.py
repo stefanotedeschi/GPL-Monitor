@@ -191,14 +191,15 @@ def build_message(results: list[tuple[dict, dict | None]]) -> str:
     il pallino è lo stesso; se tutti i prezzi coincidono sono tutti verdi).
     """
     today = to_rome(datetime.now(timezone.utc).replace(tzinfo=None)).strftime("%d/%m/%Y")
-    lines = [f"⛽ <b>Prezzi GPL – {today}</b>", ""]
+    pad = "      "
+    blocks = [f"⛽ <b>Prezzi GPL – {today}</b>"]
     prices = [p["price"] for _, p in results if p]
     best = min(prices) if prices else None
     worst = max(prices) if prices else None
     for station, p in results:
         name = html_escape(station["label"])
         if not p:
-            lines.append(f"⚪ <b>{name}</b>\n    prezzo non disponibile")
+            blocks.append(f"⚪ <b>{name}</b>\n{pad}<i>prezzo non disponibile</i>")
             continue
         if p["price"] == best:
             mark = "🟢"
@@ -207,12 +208,12 @@ def build_message(results: list[tuple[dict, dict | None]]) -> str:
         else:
             mark = "🟡"
         price = f"{p['price']:.3f}".replace(".", ",")
-        date = p["date"].strftime("%d/%m %H:%M") if p["date"] else "n.d."
-        lines.append(
-            f"{mark} <b>{name}</b>: {price} €/l\n"
-            f"    <i>in vigore dal {date}</i>"
-        )
-    return "\n".join(lines)
+        block = f"{mark} <b>{name}</b>\n{pad}<b>{price} €/l</b>"
+        if p["date"]:
+            block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>"
+        blocks.append(block)
+    # Riga vuota tra un distributore e l'altro.
+    return "\n\n".join(blocks)
 
 
 
