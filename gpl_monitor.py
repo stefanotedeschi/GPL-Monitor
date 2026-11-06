@@ -39,6 +39,7 @@ PREZZI_URL = BASE_CSV + "prezzo_alle_8.csv"
 API_URL = "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/{id}"
 STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
+GAP = "\u2003\u2003"  # spazio tra prezzo e variazione (em space, non viene compresso)
 STALE_DAYS = 7  # oltre questi giorni il prezzo è segnalato con ⏳
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
 
@@ -240,10 +241,11 @@ def build_message(
         old = previous.get(str(station["id"]))
         if isinstance(old, (int, float)):
             diff = round(p["price"] - old, 3)
+            # Telegram non colora il testo: il colore lo danno le emoji.
             if diff > 0:
-                line += f"  ▲ +{fmt_price(diff)}"
+                line += f"{GAP}🟥 ▲ +{fmt_price(diff)}"
             elif diff < 0:
-                line += f"  ▼ -{fmt_price(-diff)}"
+                line += f"{GAP}🟩 ▼ -{fmt_price(-diff)}"
         block = f"{mark} <b>{name}</b>\n{pad}{line}"
         if p["date"]:
             stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
