@@ -26,15 +26,11 @@ jobs:
           else
             echo "go=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.go == 'true'
-      - uses: actions/setup-python@v5
-        if: steps.gate.outputs.go == 'true'
-        with:
-          python-version: "3.12"
       - name: Pubblica prezzi GPL
         if: steps.gate.outputs.go == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python gpl_monitor.py
+        run: python3 gpl_monitor.py  # Python 3.12 già presente su ubuntu-latest
