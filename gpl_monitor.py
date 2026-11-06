@@ -13,7 +13,9 @@ Uso:
                                          # cerca un distributore nell'anagrafica
 
 Variabili d'ambiente richieste per l'invio:
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+  TELEGRAM_BOT_TOKEN  token del bot (@BotFather)
+  TELEGRAM_CHAT_ID    destinatario: "@nomecanale" per un canale pubblico
+                      (il bot deve esserne amministratore) o un chat id numerico
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_CSV = "https://www.mimit.gov.it/images/exportCSV/"
@@ -55,21 +57,36 @@ def http_get(url: str, retries: int = 3, timeout: int = 60) -> bytes:
     raise RuntimeError(f"Download fallito per {url}: {last}")
 
 
-def read_mimit_csv(url: str) -> list[dict[str, str]]:
+def read_mimit_csv(url: str, retries: int = 3, timeout: int = 60) -> list[dict[str, str]]:
     """Legge un CSV MIMIT: prima riga 'Estrazione del ...', poi intestazione.
 
     Il separatore è cambiato nel tempo (';' oppure '|'), quindi lo rileviamo.
     """
-    text = http_get(url).decode("utf-8", errors="replace")
+    text = http_get(url, retries=retries, timeout=timeout).decode("utf-8", errors="replace")
     lines = text.splitlines()
     if lines and lines[0].lower().startswith("estrazione"):
         lines = lines[1:]
-    header = lines[0] if lines else ""
+    if not lines:
+        return []
+    header = lines[0]
     delimiter = "|" if header.count("|") > header.count(";") else ";"
-    reader = csv.DictReader(io.StringIO("\n".join(lines)), delimiter=delimiter)
+    # QUOTE_NONE: nei nomi/indirizzi compaiono virgolette non bilanciate.
+    reader = csv.reader(
+        io.StringIO("\n".join(lines)), delimiter=delimiter, quoting=csv.QUOTE_NONE
+    )
+    keys = [k.strip() for k in next(reader)]
     rows = []
-    for row in reader:
-        rows.append({(k or "").strip(): (v or "").strip() for k, v in row.items()})
+    for fields in reader:
+        if not fields:
+            continue
+        if len(fields) > len(keys):
+            # Separatore presente dentro un campo testuale: lo riaccorpiamo
+            # nell'ultimo campo testuale prima delle colonne finali fisse.
+            extra = len(fields) - len(keys)
+            tail = 2 if "Latitudine" in keys else 0
+            cut = len(fields) - tail - extra - 1
+            fields = fields[:cut] + [delimiter.join(fields[cut:cut + extra + 1])] + fields[cut + extra + 1:]
+        rows.append({k: (v or "").strip() for k, v in zip(keys, fields)})
     return rows
 
 
@@ -86,20 +103,36 @@ def is_gpl(name: str) -> bool:
     return "GPL" in name.upper()
 
 
+try:
+    from zoneinfo import ZoneInfo
+
+    ROME = ZoneInfo("Europe/Rome")
+except Exception:  # noqa: BLE001  (es. Windows senza pacchetto tzdata)
+    ROME = None
+
+
+def to_rome(dt: datetime) -> datetime:
+    """Converte un datetime UTC in ora italiana (naive)."""
+    dt = dt.replace(tzinfo=timezone.utc)
+    return (dt.astimezone(ROME) if ROME else dt.astimezone()).replace(tzinfo=None)
+
+
 def parse_date(value: str) -> datetime | None:
+    """Restituisce l'ora italiana. L'API usa UTC ('...Z'), il CSV l'ora locale."""
     if not value:
         return None
-    for fmt in (
-        "%Y-%m-%dT%H:%M:%S.%fZ",
-        "%Y-%m-%dT%H:%M:%SZ",
-        "%Y-%m-%dT%H:%M:%S",
-        "%d/%m/%Y %H:%M:%S",
-        "%d/%m/%Y %H:%M",
+    for fmt, is_utc in (
+        ("%Y-%m-%dT%H:%M:%S.%fZ", True),
+        ("%Y-%m-%dT%H:%M:%SZ", True),
+        ("%Y-%m-%dT%H:%M:%S", False),
+        ("%d/%m/%Y %H:%M:%S", False),
+        ("%d/%m/%Y %H:%M", False),
     ):
         try:
-            return datetime.strptime(value, fmt)
+            dt = datetime.strptime(value, fmt)
         except ValueError:
             continue
+        return to_rome(dt) if is_utc else dt
     return None
 
 
@@ -127,7 +160,9 @@ def price_from_api(station_id: str) -> dict | None:
 def prices_from_csv() -> dict[str, dict]:
     """Prezzi GPL dal CSV giornaliero, indicizzati per idImpianto."""
     out: dict[str, dict] = {}
-    for row in read_mimit_csv(PREZZI_URL):
+    # Ripiego: timeout breve e un solo tentativo (da GitHub Actions il sito
+    # www.mimit.gov.it spesso non risponde, inutile sprecare minuti).
+    for row in read_mimit_csv(PREZZI_URL, retries=1, timeout=20):
         if not is_gpl(row.get("descCarburante", "")):
             continue
         sid = row.get("idImpianto", "")
@@ -150,7 +185,7 @@ def html_escape(s: str) -> str:
 
 
 def build_message(results: list[tuple[dict, dict | None]]) -> str:
-    today = datetime.now().strftime("%d/%m/%Y")
+    today = to_rome(datetime.now(timezone.utc).replace(tzinfo=None)).strftime("%d/%m/%Y")
     lines = [f"⛽ <b>Prezzi GPL – {today}</b>", ""]
     found = sorted(
         [(s, p) for s, p in results if p], key=lambda sp: sp[1]["price"]
@@ -169,57 +204,53 @@ def build_message(results: list[tuple[dict, dict | None]]) -> str:
     return "\n".join(lines)
 
 
-def send_telegram(text: str) -> None:
+
+# --------------------------------------------------------------------------- #
+# Telegram
+# --------------------------------------------------------------------------- #
+class TelegramError(Exception):
+    def __init__(self, code: int, description: str):
+        super().__init__(f"{code}: {description}")
+        self.code = code
+        self.description = description
+
+
+def tg(method: str, **params) -> object:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        sys.exit("Mancano TELEGRAM_BOT_TOKEN e/o TELEGRAM_CHAT_ID.")
-    payload = urllib.parse.urlencode(
-        {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": "true",
-        }
+    if not token:
+        sys.exit("Manca la variabile d'ambiente TELEGRAM_BOT_TOKEN.")
+    data = urllib.parse.urlencode(
+        {k: v if isinstance(v, str) else json.dumps(v) for k, v in params.items()}
     ).encode()
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage", data=payload
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
-        sys.exit(f"Errore Telegram {exc.code}: {exc.read().decode(errors='replace')}")
-    if not body.get("ok"):
-        sys.exit(f"Errore Telegram: {body}")
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    for _ in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=30) as r:
+                body = json.loads(r.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                body = json.loads(exc.read())
+            except Exception:  # noqa: BLE001
+                body = {"ok": False, "error_code": exc.code, "description": str(exc)}
+        if body.get("ok"):
+            return body.get("result")
+        retry = (body.get("parameters") or {}).get("retry_after")
+        if body.get("error_code") == 429 and retry:
+            time.sleep(int(retry) + 1)
+            continue
+        break
+    raise TelegramError(int(body.get("error_code") or 0), str(body.get("description")))
+
+
+def send_message(chat_id: int | str, text: str) -> None:
+    tg("sendMessage", chat_id=str(chat_id), text=text, parse_mode="HTML",
+       disable_web_page_preview="true")
 
 
 # --------------------------------------------------------------------------- #
-# Comandi
+# Prezzi -> messaggio
 # --------------------------------------------------------------------------- #
-def cmd_find(queries: list[str], provincia: str | None) -> None:
-    rows = read_mimit_csv(ANAGRAFICA_URL)
-    for q in queries:
-        words = norm(q).split()
-        print(f"\n=== {q} ===")
-        scored = []
-        for r in rows:
-            if provincia and r.get("Provincia", "").upper() != provincia.upper():
-                continue
-            hay = norm(" ".join(r.values()))
-            score = sum(1 for w in words if w in hay.split() or w in hay)
-            if score:
-                scored.append((score, r))
-        scored.sort(key=lambda x: -x[0])
-        for score, r in scored[:8]:
-            print(
-                f"  [{score}/{len(words)}] id={r.get('idImpianto')} | "
-                f"{r.get('Nome Impianto')} | {r.get('Bandiera')} | "
-                f"{r.get('Gestore')} | {r.get('Indirizzo')} | {r.get('Comune')}"
-            )
-
-
-def cmd_run(dry_run: bool) -> None:
+def current_message() -> str:
     stations = json.loads(STATIONS_FILE.read_text(encoding="utf-8"))
     csv_prices: dict[str, dict] | None = None
     results: list[tuple[dict, dict | None]] = []
@@ -235,23 +266,67 @@ def cmd_run(dry_run: bool) -> None:
                     csv_prices = {}
             p = csv_prices.get(sid)
         results.append((st, p))
-    text = build_message(results)
-    print(text)
-    if not dry_run:
-        send_telegram(text)
-        print("\nMessaggio inviato su Telegram.")
+    return build_message(results)
+
+
+# --------------------------------------------------------------------------- #
+# Comandi
+# --------------------------------------------------------------------------- #
+def cmd_find(queries: list[str], provincia: str | None) -> None:
+    rows = read_mimit_csv(ANAGRAFICA_URL)
+    try:
+        gpl = prices_from_csv()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[csv] {exc}", file=sys.stderr)
+        gpl = {}
+    for q in queries:
+        words = norm(q).split()
+        print(f"\n=== {q} ===")
+        scored = []
+        for r in rows:
+            if provincia and r.get("Provincia", "").upper() != provincia.upper():
+                continue
+            hay = norm(" ".join(r.values()))
+            score = sum(1 for w in words if w in hay.split() or w in hay)
+            if score:
+                scored.append((score, r))
+        scored.sort(key=lambda x: -x[0])
+        for score, r in scored[:8]:
+            p = gpl.get(r.get("idImpianto", ""))
+            tag = f"GPL {p['price']:.3f}" if p else "no GPL"
+            print(
+                f"  [{score}/{len(words)}] id={r.get('idImpianto')} [{tag}] | "
+                f"{r.get('Nome Impianto')} | {r.get('Bandiera')} | "
+                f"{r.get('Gestore')} | {r.get('Indirizzo')} | {r.get('Comune')}"
+            )
+
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dry-run", action="store_true", help="non inviare su Telegram")
+    ap.add_argument("--dry-run", action="store_true", help="stampa il messaggio senza inviarlo")
     ap.add_argument("--find", nargs="+", metavar="TESTO", help="cerca distributori nell'anagrafica")
     ap.add_argument("--provincia", help="filtra la ricerca per sigla provincia (es. CN)")
     args = ap.parse_args()
     if args.find:
         cmd_find(args.find, args.provincia)
-    else:
-        cmd_run(args.dry_run)
+        return
+    text = current_message()
+    print(text)
+    if not args.dry_run:
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+        if not chat_id:
+            sys.exit("Manca la variabile d'ambiente TELEGRAM_CHAT_ID.")
+        try:
+            send_message(chat_id, text)
+        except TelegramError as exc:
+            sys.exit(f"Errore Telegram {exc}")
+        print("Messaggio inviato su Telegram.")
 
 
 if __name__ == "__main__":
