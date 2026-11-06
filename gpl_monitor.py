@@ -39,6 +39,15 @@ PREZZI_URL = BASE_CSV + "prezzo_alle_8.csv"
 API_URL = "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/{id}"
 STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
+MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
+
+
+def read_limited(resp) -> bytes:
+    """Legge al massimo MAX_RESPONSE_BYTES, altrimenti errore."""
+    data = resp.read(MAX_RESPONSE_BYTES + 1)
+    if len(data) > MAX_RESPONSE_BYTES:
+        raise ValueError(f"risposta oltre {MAX_RESPONSE_BYTES} byte")
+    return data
 
 
 # --------------------------------------------------------------------------- #
@@ -50,7 +59,7 @@ def http_get(url: str, retries: int = 3, timeout: int = 60) -> bytes:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
+                return read_limited(resp)
         except Exception as exc:  # noqa: BLE001
             last = exc
             time.sleep(2 * (attempt + 1))
@@ -143,12 +152,20 @@ def price_from_api(station_id: str) -> dict | None:
     except Exception as exc:  # noqa: BLE001
         print(f"[api] impianto {station_id}: {exc}", file=sys.stderr)
         return None
+    if not isinstance(data, dict):
+        print(f"[api] impianto {station_id}: risposta inattesa", file=sys.stderr)
+        return None
     best = None
     for fuel in data.get("fuels") or []:
-        if not is_gpl(str(fuel.get("name", ""))):
+        # Un record malformato salta solo quel record, non l'intero invio.
+        try:
+            if not isinstance(fuel, dict) or not is_gpl(str(fuel.get("name", ""))):
+                continue
+            when = parse_date(str(fuel.get("validityDate") or fuel.get("insertDate") or ""))
+            cand = {"price": float(fuel["price"]), "date": when}
+        except (KeyError, TypeError, ValueError) as exc:
+            print(f"[api] impianto {station_id}: record GPL non valido ({exc})", file=sys.stderr)
             continue
-        when = parse_date(str(fuel.get("validityDate") or fuel.get("insertDate") or ""))
-        cand = {"price": float(fuel["price"]), "date": when}
         if best is None or (when and (best["date"] is None or when > best["date"])):
             best = cand
     if best:
@@ -235,20 +252,29 @@ def tg(method: str, **params) -> object:
         {k: v if isinstance(v, str) else json.dumps(v) for k, v in params.items()}
     ).encode()
     url = f"https://api.telegram.org/bot{token}/{method}"
-    for _ in range(3):
+    body: dict = {"ok": False, "error_code": 0, "description": "nessuna risposta"}
+    for attempt in range(3):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=30) as r:
-                body = json.loads(r.read())
+                body = json.loads(read_limited(r))
         except urllib.error.HTTPError as exc:
             try:
                 body = json.loads(exc.read())
             except Exception:  # noqa: BLE001
-                body = {"ok": False, "error_code": exc.code, "description": str(exc)}
+                body = {"ok": False, "error_code": exc.code, "description": f"HTTP {exc.code}"}
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            # Errore di rete momentaneo: si riprova. Il messaggio non contiene l'URL (né il token).
+            body = {"ok": False, "error_code": 0, "description": f"errore di rete: {type(exc).__name__}"}
+            time.sleep(5 * (attempt + 1))
+            continue
         if body.get("ok"):
             return body.get("result")
         retry = (body.get("parameters") or {}).get("retry_after")
         if body.get("error_code") == 429 and retry:
             time.sleep(int(retry) + 1)
+            continue
+        if int(body.get("error_code") or 0) >= 500:
+            time.sleep(5 * (attempt + 1))
             continue
         break
     raise TelegramError(int(body.get("error_code") or 0), str(body.get("description")))
