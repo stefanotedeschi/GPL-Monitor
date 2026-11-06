@@ -1,9 +1,9 @@
 [
-  {"id": "37489", "label": "Enercoop Cuneo"},
-  {"id": "60136", "label": "CONAD SUPERSTORE BORGO SAN DALMAZZO"},
-  {"id": "40018", "label": "PV. SAN ROCCO DI BERNEZZO"},
-  {"id": "61242", "label": "SOCOGAS RETE CUNEO BELLAVISTA PV 210088"},
-  {"id": "43299", "label": "P.V. BEINETTE"},
-  {"id": "21783", "label": "IP MONDOVI' VIA CUNEO 107"},
-  {"id": "58620", "label": "SOCOGAS RETE MONDOVI' LANGHE PV 0695"}
+  {"id": "37489", "label": "ENERCOOP CUNEO"},
+  {"id": "60136", "label": "CONAD BORGO SAN DALMAZZO"},
+  {"id": "61242", "label": "SOCOGAS CUNEO BELLAVISTA"},
+  {"id": "40018", "label": "SACED SAN ROCCO DI BERNEZZO"},
+  {"id": "43299", "label": "SACED BEINETTE"},
+  {"id": "21783", "label": "IP MONDOVI'"},
+  {"id": "58620", "label": "SOCOGAS MONDOVI' VIA LANGHE"}
 ]

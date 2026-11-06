@@ -185,22 +185,33 @@ def html_escape(s: str) -> str:
 
 
 def build_message(results: list[tuple[dict, dict | None]]) -> str:
+    """Messaggio nell'ordine di stations.json.
+
+    🟢 prezzo più basso, 🔴 prezzo più alto, 🟡 gli altri (a parità di prezzo
+    il pallino è lo stesso; se tutti i prezzi coincidono sono tutti verdi).
+    """
     today = to_rome(datetime.now(timezone.utc).replace(tzinfo=None)).strftime("%d/%m/%Y")
     lines = [f"⛽ <b>Prezzi GPL – {today}</b>", ""]
-    found = sorted(
-        [(s, p) for s, p in results if p], key=lambda sp: sp[1]["price"]
-    )
-    missing = [s for s, p in results if not p]
-    cheapest = found[0][1]["price"] if found else None
-    for station, p in found:
-        mark = "🟢 " if p["price"] == cheapest else "• "
+    prices = [p["price"] for _, p in results if p]
+    best = min(prices) if prices else None
+    worst = max(prices) if prices else None
+    for station, p in results:
+        name = html_escape(station["label"])
+        if not p:
+            lines.append(f"⚪ <b>{name}</b>\n    prezzo non disponibile")
+            continue
+        if p["price"] == best:
+            mark = "🟢"
+        elif p["price"] == worst:
+            mark = "🔴"
+        else:
+            mark = "🟡"
+        price = f"{p['price']:.3f}".replace(".", ",")
         date = p["date"].strftime("%d/%m %H:%M") if p["date"] else "n.d."
         lines.append(
-            f"{mark}<b>{p['price']:.3f} €/l</b> – {html_escape(station['label'])}\n"
+            f"{mark} <b>{name}</b>: {price} €/l\n"
             f"    <i>aggiornato il {date}</i>"
         )
-    for station in missing:
-        lines.append(f"⚠️ {html_escape(station['label'])}: prezzo non disponibile")
     return "\n".join(lines)
 
 
