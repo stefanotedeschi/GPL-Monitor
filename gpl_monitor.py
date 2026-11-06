@@ -207,30 +207,25 @@ def fmt_price(value: float) -> str:
     return f"{value:.3f}".replace(".", ",")
 
 
-def build_message(
-    results: list[tuple[dict, dict | None]],
-    previous: dict[str, float] | None = None,
-    now: datetime | None = None,
-) -> str:
-    """Messaggio nell'ordine di stations.json.
+def _compare_group(station: dict) -> str:
+    """Gruppo in cui si confrontano i prezzi: "confronto", altrimenti "zona"."""
+    return str(station.get("confronto") or station.get("zona") or "")
 
-    🟢 prezzo più basso, 🔴 prezzo più alto, 🟡 gli altri (a parità di prezzo
-    il pallino è lo stesso; se tutti i prezzi coincidono sono tutti verdi).
-    ▲/▼ variazione rispetto all'ultimo invio programmato (``previous``).
-    ⏳ prezzo in vigore da più di STALE_DAYS giorni.
-    """
-    previous = previous or {}
-    now = now or to_rome(datetime.now(timezone.utc).replace(tzinfo=None))
+
+def _station_blocks(
+    results: list[tuple[dict, dict | None]],
+    previous: dict[str, float],
+    now: datetime,
+    ranges: dict[str, tuple[float, float]],
+) -> list[str]:
     pad = "      "
-    blocks = [f"⛽ <b>Prezzi GPL – {now.strftime('%d/%m/%Y')}</b>"]
-    prices = [p["price"] for _, p in results if p]
-    best = min(prices) if prices else None
-    worst = max(prices) if prices else None
+    blocks: list[str] = []
     for station, p in results:
         name = html_escape(station["label"])
         if not p:
             blocks.append(f"⚪ <b>{name}</b>\n{pad}<i>prezzo non disponibile</i>")
             continue
+        best, worst = ranges[_compare_group(station)]
         if p["price"] == best:
             mark = "🟢"
         elif p["price"] == worst:
@@ -250,6 +245,40 @@ def build_message(
             stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
             block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>{stale}"
         blocks.append(block)
+    return blocks
+
+
+def build_message(
+    results: list[tuple[dict, dict | None]],
+    previous: dict[str, float] | None = None,
+    now: datetime | None = None,
+) -> str:
+    """Messaggio nell'ordine di stations.json, diviso per zona se ce n'è più d'una.
+
+    🟢 prezzo più basso del gruppo di confronto, 🔴 più alto, 🟡 gli altri (a parità di prezzo
+    il pallino è lo stesso; se tutti i prezzi coincidono sono tutti verdi).
+    ▲/▼ variazione rispetto all'ultimo invio programmato (``previous``).
+    ⏳ prezzo in vigore da più di STALE_DAYS giorni.
+    """
+    previous = previous or {}
+    now = now or to_rome(datetime.now(timezone.utc).replace(tzinfo=None))
+    blocks = [f"⛽ <b>Prezzi GPL – {now.strftime('%d/%m/%Y')}</b>"]
+    # Pallini: min e max dentro ogni gruppo di confronto (campo "confronto",
+    # oppure la zona). Più zone possono condividere lo stesso confronto.
+    by_group: dict[str, list[float]] = {}
+    for station, p in results:
+        if p:
+            by_group.setdefault(_compare_group(station), []).append(p["price"])
+    ranges = {g: (min(v), max(v)) for g, v in by_group.items()}
+    # Sezioni per "zona" (campo facoltativo di stations.json), nell'ordine in cui
+    # compaiono.
+    zones: dict[str, list[tuple[dict, dict | None]]] = {}
+    for station, p in results:
+        zones.setdefault(str(station.get("zona") or ""), []).append((station, p))
+    for zone, items in zones.items():
+        if len(zones) > 1 and zone:
+            blocks.append(f"📍 <b>{html_escape(zone.upper())}</b>")
+        blocks.extend(_station_blocks(items, previous, now, ranges))
     # Riga vuota tra un distributore e l'altro.
     return "\n\n".join(blocks)
 

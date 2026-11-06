@@ -1,9 +1,12 @@
 [
-  {"id": "37489", "label": "ENERCOOP CUNEO"},
-  {"id": "60136", "label": "CONAD BORGO SAN DALMAZZO"},
-  {"id": "61242", "label": "SOCOGAS CUNEO BELLAVISTA"},
-  {"id": "40018", "label": "SACED SAN ROCCO DI BERNEZZO"},
-  {"id": "43299", "label": "SACED BEINETTE"},
-  {"id": "21783", "label": "IP MONDOVI'"},
-  {"id": "58620", "label": "SOCOGAS MONDOVI' VIA LANGHE"}
+  {"id": "37489", "label": "ENERCOOP CUNEO", "zona": "Cuneo"},
+  {"id": "60136", "label": "CONAD BORGO SAN DALMAZZO", "zona": "Cuneo"},
+  {"id": "61242", "label": "SOCOGAS CUNEO BELLAVISTA", "zona": "Cuneo"},
+  {"id": "40018", "label": "SACED SAN ROCCO DI BERNEZZO", "zona": "Cuneo"},
+  {"id": "43299", "label": "SACED BEINETTE", "zona": "Cuneo"},
+  {"id": "21783", "label": "IP MONDOVI'", "zona": "Mondovì", "confronto": "Cuneo"},
+  {"id": "58620", "label": "SOCOGAS MONDOVI' VIA LANGHE", "zona": "Mondovì", "confronto": "Cuneo"},
+  {"id": "61670", "label": "PAD SAINT-CHRISTOPHE", "zona": "Aosta"},
+  {"id": "20870", "label": "VALPETROLI AOSTA", "zona": "Aosta"},
+  {"id": "57676", "label": "TAMOIL POLLEIN AUTOPORTO", "zona": "Aosta"}
 ]
