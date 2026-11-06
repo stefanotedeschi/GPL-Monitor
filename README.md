@@ -41,7 +41,7 @@ GitHub Actions `www.mimit.gov.it` non risponde.
 
 - 📍 sezione (campo `zona`)
 - 🟢 prezzo più basso, 🔴 più alto, 🟡 gli altri, confrontati dentro il gruppo
-  `confronto` (Cuneo e Mondovì insieme, Aosta a parte)
+  `confronto` (o della zona se manca)
 - ▲ / ▼ variazione rispetto all'invio programmato del giorno prima (salvato
   nella cache di GitHub Actions; le esecuzioni manuali non lo aggiornano)
 - ⏳ prezzo in vigore da più di 7 giorni: potrebbe non essere aggiornato
