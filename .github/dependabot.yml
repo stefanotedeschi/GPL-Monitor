@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Propone una PR quando esce una nuova versione delle azioni usate nei workflow.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
