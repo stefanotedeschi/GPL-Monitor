@@ -1,0 +1,20 @@
+name: discover (temporaneo)
+on:
+  push:
+    branches: ["claude/**"]
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: |
+          python gpl_monitor.py --provincia CN --find \
+            "Enercoop Cuneo" \
+            "CONAD SUPERSTORE BORGO SAN DALMAZZO" \
+            "SAN ROCCO DI BERNEZZO" \
+            "SOCOGAS RETE CUNEO BELLAVISTA 210088" \
+            "BEINETTE" \
+            "IP MONDOVI VIA CUNEO 107" \
+            "SOCOGAS RETE MONDOVI LANGHE 0695"
