@@ -1,0 +1,40 @@
+name: GPL giornaliero
+
+on:
+  schedule:
+    # Il cron di GitHub è in UTC: le 9:00 a Roma sono le 8:00 UTC (ora solare)
+    # oppure le 7:00 UTC (ora legale). Pianifichiamo entrambe e lo step
+    # "orario" lascia proseguire solo il trigger giusto per la stagione,
+    # così anche un avvio in ritardo non produce un doppio invio.
+    - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Orario (9 a Roma)
+        id: gate
+        run: |
+          tz=$(TZ=Europe/Rome date +%Z)
+          if [ "$tz" = "CEST" ]; then expected="0 7 * * *"; else expected="0 8 * * *"; fi
+          echo "Fuso Roma: $tz - trigger atteso: '$expected' - ricevuto: '${{ github.event.schedule }}'"
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "${{ github.event.schedule }}" = "$expected" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.go == 'true'
+        with:
+          python-version: "3.12"
+      - name: Pubblica prezzi GPL
+        if: steps.gate.outputs.go == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python gpl_monitor.py
