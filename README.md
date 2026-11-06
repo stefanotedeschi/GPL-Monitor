@@ -37,6 +37,13 @@ I prezzi arrivano dall'API Osservaprezzi (`carburanti.mise.gov.it/ospzApi`).
 Il CSV `prezzo_alle_8.csv` è solo un ripiego, con timeout breve perché da
 GitHub Actions `www.mimit.gov.it` non risponde.
 
+## Simboli nel messaggio
+
+- 🟢 prezzo più basso, 🔴 più alto, 🟡 gli altri
+- ▲ / ▼ variazione rispetto all'invio programmato del giorno prima (salvato
+  nella cache di GitHub Actions; le esecuzioni manuali non lo aggiornano)
+- ⏳ prezzo in vigore da più di 7 giorni: potrebbe non essere aggiornato
+
 ## Uso locale
 
 ```bash
