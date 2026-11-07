@@ -82,3 +82,9 @@ come variabili d'ambiente e lanciare `python gpl_monitor.py`.
 `"confronto": "<zona>"` facoltativo per confrontare i prezzi insieme a
 un'altra zona (es. Mondovì con Cuneo). Le sezioni seguono l'ordine del file.
 L'`idImpianto` si trova con `--find`, che indica anche se l'impianto vende GPL.
+
+## Altro bot: distributore più conveniente
+
+Nella cartella [`distributore-bot`](distributore-bot/README.md) c'è un secondo
+bot, interattivo: gli mandi la tua posizione e ti dice dove conviene fare
+rifornimento contando anche il tragitto.
