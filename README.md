@@ -64,6 +64,8 @@ GitHub Actions `www.mimit.gov.it` non risponde.
 - ▲ / ▼ variazione rispetto all'invio programmato del giorno prima (salvato
   nella cache di GitHub Actions; le esecuzioni manuali non lo aggiornano)
 - ⏳ prezzo in vigore da più di 7 giorni: potrebbe non essere aggiornato
+- 🕒 orario di apertura di oggi dell'impianto (dati Osservaprezzi; assente se
+  il gestore non l'ha comunicato)
 
 ## Uso locale
 
