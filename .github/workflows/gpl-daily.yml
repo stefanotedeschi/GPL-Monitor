@@ -2,56 +2,49 @@ name: GPL giornaliero
 
 on:
   schedule:
-    # Il cron di GitHub è in UTC: le 9:00 a Roma sono le 8:00 UTC (ora solare)
-    # oppure le 7:00 UTC (ora legale). Pianifichiamo entrambe e lo step
-    # "orario" lascia proseguire solo il trigger giusto per la stagione,
-    # così anche un avvio in ritardo non produce un doppio invio.
-    - cron: "0 7 * * *"
-    - cron: "0 8 * * *"
+    # Il cron di GitHub è in UTC e non è garantito: sotto carico un avvio può
+    # slittare o saltare (succede spesso allo scoccare dell'ora). Pianifichiamo
+    # quindi più tentativi tra le 7 e le 10 UTC, al minuto 5: lo script invia
+    # al primo tentativo dalle 9 di Roma in poi (ora legale o solare) e salta
+    # gli altri se il messaggio di oggi è già partito.
+    - cron: "5 7,8,9,10 * * *"
   workflow_dispatch:
 
 # Permessi minimi: il job deve solo leggere il codice.
 permissions:
   contents: read
 
+# Un tentativo alla volta, così due avvii ravvicinati non inviano due volte.
+concurrency:
+  group: gpl-daily
+  cancel-in-progress: false
+
 jobs:
   send:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Orario (9 a Roma)
-        id: gate
-        run: |
-          tz=$(TZ=Europe/Rome date +%Z)
-          if [ "$tz" = "CEST" ]; then expected="0 7 * * *"; else expected="0 8 * * *"; fi
-          echo "Fuso Roma: $tz - trigger atteso: '$expected' - ricevuto: '${{ github.event.schedule }}'"
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "${{ github.event.schedule }}" = "$expected" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.gate.outputs.go == 'true'
         with:
           persist-credentials: false
-      # Prezzi dell'ultimo invio programmato, per le frecce ▲/▼.
+      # Prezzi dell'ultimo invio programmato, per le frecce ▲/▼ e per sapere
+      # se il messaggio di oggi è già partito.
       - name: Recupera prezzi precedenti
-        if: steps.gate.outputs.go == 'true'
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: state/last_prices.json
           key: gpl-state-${{ github.run_id }}
           restore-keys: gpl-state-
       - name: Pubblica prezzi GPL
-        if: steps.gate.outputs.go == 'true'
+        id: send
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # Solo l'invio programmato aggiorna lo stato: le prove manuali non spostano il confronto.
-          SAVE_STATE: ${{ github.event_name == 'schedule' && '--save-state' || '' }}
-        run: python3 gpl_monitor.py --state state/last_prices.json $SAVE_STATE  # Python già presente su ubuntu-latest
+          FLAGS: ${{ github.event_name == 'schedule' && '--save-state --once-per-day' || '' }}
+        run: python3 gpl_monitor.py --state state/last_prices.json $FLAGS  # Python già presente su ubuntu-latest
       - name: Salva prezzi di oggi
-        if: steps.gate.outputs.go == 'true' && github.event_name == 'schedule'
+        if: steps.send.outputs.saved == 'true'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: state/last_prices.json

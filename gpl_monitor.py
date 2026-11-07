@@ -41,6 +41,7 @@ STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
 GAP = "\u2003\u2003"  # spazio tra prezzo e variazione (em space, non viene compresso)
 STALE_DAYS = 7  # oltre questi giorni il prezzo è segnalato con ⏳
+SEND_HOUR = 9  # ora italiana del primo invio utile (--once-per-day)
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
 
 
@@ -371,6 +372,17 @@ def load_state(path: Path | None) -> dict[str, float]:
         return {}
 
 
+def sent_today(path: Path | None, now: datetime) -> bool:
+    """True se lo stato è stato salvato oggi (ora italiana) da un invio programmato."""
+    if not path or not path.exists():
+        return False
+    try:
+        saved = datetime.fromisoformat(json.loads(path.read_text(encoding="utf-8"))["saved_at"])
+    except Exception:  # noqa: BLE001
+        return False
+    return to_rome(saved.astimezone(timezone.utc).replace(tzinfo=None)).date() == now.date()
+
+
 def save_state(path: Path, results: list[tuple[dict, dict | None]], old: dict[str, float]) -> None:
     prices = dict(old)  # chi oggi non ha prezzo mantiene l'ultimo noto
     prices.update({str(st["id"]): p["price"] for st, p in results if p})
@@ -426,10 +438,20 @@ def main() -> None:
     ap.add_argument("--provincia", help="filtra la ricerca per sigla provincia (es. CN)")
     ap.add_argument("--state", type=Path, help="file JSON con i prezzi dell'ultimo invio (per ▲/▼)")
     ap.add_argument("--save-state", action="store_true", help="aggiorna --state con i prezzi di oggi")
+    ap.add_argument("--once-per-day", action="store_true",
+                    help="invia solo dalle 9 (ora italiana) e se oggi non è già stato fatto (vedi --state)")
     args = ap.parse_args()
     if args.find:
         cmd_find(args.find, args.provincia)
         return
+    if args.once_per_day:
+        now = to_rome(datetime.now(timezone.utc).replace(tzinfo=None))
+        if now.hour < SEND_HOUR:
+            print(f"Sono le {now:%H:%M} a Roma: l'invio parte dalle {SEND_HOUR}.")
+            return
+        if sent_today(args.state, now):
+            print("Messaggio di oggi già inviato.")
+            return
     results = collect_results()
     previous = load_state(args.state)
     text = build_message(results, previous)
@@ -445,6 +467,10 @@ def main() -> None:
         print("Messaggio inviato su Telegram.")
     if args.save_state and args.state:
         save_state(args.state, results, previous)
+        out = os.environ.get("GITHUB_OUTPUT")
+        if out:
+            with open(out, "a", encoding="utf-8") as f:
+                f.write("saved=true\n")
 
 
 if __name__ == "__main__":
