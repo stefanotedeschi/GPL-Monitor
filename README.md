@@ -33,6 +33,25 @@ ritardo di GitHub (capita, soprattutto allo scoccare dell'ora) viene recuperato
 dal tentativo successivo, senza doppi invii. Dopo 60 giorni senza commit GitHub
 sospende i workflow pianificati: si riattivano con *Enable workflow*.
 
+### Avvio esterno (più affidabile del cron di GitHub)
+
+Il cron di GitHub è "best effort" e può saltare. Per un orario sicuro si può
+far avviare il workflow da un servizio esterno, ad esempio
+[cron-job.org](https://cron-job.org) (gratuito):
+
+1. GitHub → *Settings → Developer settings → Fine-grained tokens → Generate
+   new token*: solo il repository `GPL-Monitor`, permesso **Actions: Read and
+   write**, scadenza a scelta.
+2. Su cron-job.org crea un job alle **9:00, fuso Europe/Rome**:
+   - URL `https://api.github.com/repos/stefanotedeschi/GPL-Monitor/actions/workflows/gpl-daily.yml/dispatches`
+   - metodo **POST**
+   - header `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`
+   - corpo `{"ref":"main","inputs":{"programmato":"true"}}`
+
+Con `programmato=true` il workflow si comporta come l'invio programmato: un
+solo messaggio al giorno e frecce aggiornate. Il cron di GitHub resta come
+riserva e salta l'invio se è già partito.
+
 I prezzi arrivano dall'API Osservaprezzi (`carburanti.mise.gov.it/ospzApi`).
 Il CSV `prezzo_alle_8.csv` è solo un ripiego, con timeout breve perché da
 GitHub Actions `www.mimit.gov.it` non risponde.

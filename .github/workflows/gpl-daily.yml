@@ -9,6 +9,11 @@ on:
     # gli altri se il messaggio di oggi è già partito.
     - cron: "5 7,8,9,10 * * *"
   workflow_dispatch:
+    inputs:
+      programmato:
+        description: "Comportati come l'invio programmato (una volta al giorno, dalle 9, aggiorna le frecce)"
+        type: boolean
+        default: false
 
 # Permessi minimi: il job deve solo leggere il codice.
 permissions:
@@ -40,8 +45,9 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Solo l'invio programmato aggiorna lo stato: le prove manuali non spostano il confronto.
-          FLAGS: ${{ github.event_name == 'schedule' && '--save-state --once-per-day' || '' }}
+          # Solo l'invio programmato (cron di GitHub o avvio esterno con programmato=true)
+          # aggiorna lo stato: le prove manuali non spostano il confronto.
+          FLAGS: ${{ (github.event_name == 'schedule' || inputs.programmato) && '--save-state --once-per-day' || '' }}
         run: python3 gpl_monitor.py --state state/last_prices.json $FLAGS  # Python già presente su ubuntu-latest
       - name: Salva prezzi di oggi
         if: steps.send.outputs.saved == 'true'
