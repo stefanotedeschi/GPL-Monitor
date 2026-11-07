@@ -40,6 +40,7 @@ API_URL = "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/{id}"
 STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
 GAP = "\u2003\u2003"  # spazio tra prezzo e variazione (em space, non viene compresso)
+BLANK = "\u2800"  # carattere vuoto (Braille) per una riga vuota che Telegram non elimina
 STALE_DAYS = 7  # oltre questi giorni il prezzo è segnalato con ⏳
 SEND_HOUR = 9  # ora italiana del primo invio utile (--once-per-day)
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
@@ -311,7 +312,10 @@ def build_message(
         zones.setdefault(str(station.get("zona") or ""), []).append((station, p))
     for zone, items in zones.items():
         if len(zones) > 1 and zone:
-            blocks.append(f"📍 <b>{html_escape(zone.upper())}</b>")
+            # Dalla seconda sezione in poi una riga vuota in più (con un carattere
+            # invisibile, perché Telegram comprime le righe vuote consecutive).
+            gap = f"{BLANK}\n" if len(blocks) > 1 else ""
+            blocks.append(f"{gap}📍 <b>{html_escape(zone.upper())}</b>")
         blocks.extend(_station_blocks(items, previous, now, ranges))
     # Riga vuota tra un distributore e l'altro.
     return "\n\n".join(blocks)
