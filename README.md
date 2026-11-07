@@ -64,6 +64,8 @@ GitHub Actions `www.mimit.gov.it` non risponde.
 - ▲ / ▼ variazione rispetto all'invio programmato del giorno prima (salvato
   nella cache di GitHub Actions; le esecuzioni manuali non lo aggiornano)
 - ⏳ prezzo in vigore da più di 7 giorni: potrebbe non essere aggiornato
+- 🕒 orario di apertura di oggi dell'impianto (dati Osservaprezzi; assente se
+  il gestore non l'ha comunicato)
 
 ## Uso locale
 
@@ -81,4 +83,6 @@ come variabili d'ambiente e lanciare `python gpl_monitor.py`.
 `{"id": "<idImpianto>", "label": "<nome>", "zona": "<sezione>"}`, con
 `"confronto": "<zona>"` facoltativo per confrontare i prezzi insieme a
 un'altra zona (es. Mondovì con Cuneo). Le sezioni seguono l'ordine del file.
+Se il gestore non ha comunicato l'orario al MIMIT, si può inserire a mano con
+`"orari": {"1": "08:00-12:00", …, "7": "chiuso"}` (1 = lunedì).
 L'`idImpianto` si trova con `--find`, che indica anche se l'impianto vende GPL.

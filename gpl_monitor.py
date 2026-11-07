@@ -40,6 +40,7 @@ API_URL = "https://carburanti.mise.gov.it/ospzApi/registry/servicearea/{id}"
 STATIONS_FILE = Path(__file__).with_name("stations.json")
 USER_AGENT = "Mozilla/5.0 (compatible; GPL-Monitor/1.0)"
 GAP = "\u2003\u2003"  # spazio tra prezzo e variazione (em space, non viene compresso)
+BLANK = "\u2800"  # carattere vuoto (Braille) per una riga vuota che Telegram non elimina
 STALE_DAYS = 7  # oltre questi giorni il prezzo è segnalato con ⏳
 SEND_HOUR = 9  # ora italiana del primo invio utile (--once-per-day)
 MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # limite di sicurezza per le risposte HTTP
@@ -174,7 +175,38 @@ def price_from_api(station_id: str) -> dict | None:
     if best:
         best["name"] = data.get("name") or ""
         best["address"] = data.get("address") or ""
+        best["hours"] = hours_today(data.get("orariapertura"))
     return best
+
+
+def hours_today(orari: object, today: datetime | None = None) -> str | None:
+    """Orario di apertura di oggi (ora italiana) dai dati Osservaprezzi.
+
+    giornoSettimanaId: 1 = lunedì … 7 = domenica. Restituisce None se
+    l'impianto non ha comunicato l'orario o il dato manca.
+    """
+    today = today or to_rome(datetime.now(timezone.utc).replace(tzinfo=None))
+    if not isinstance(orari, list):
+        return None
+    day = next((o for o in orari if isinstance(o, dict)
+                and o.get("giornoSettimanaId") == today.isoweekday()), None)
+    if not day or day.get("flagNonComunicato"):
+        return None
+    if day.get("flagH24"):
+        return "aperto 24 ore"
+    if day.get("flagChiusura"):
+        return "chiuso"
+
+    def span(a: object, b: object) -> str | None:
+        return f"{a}-{b}" if a and b else None
+
+    if day.get("flagOrarioContinuato"):
+        parts = [span(day.get("oraAperturaOrarioContinuato"), day.get("oraChiusuraOrarioContinuato"))]
+    else:
+        parts = [span(day.get("oraAperturaMattina"), day.get("oraChiusuraMattina")),
+                 span(day.get("oraAperturaPomeriggio"), day.get("oraChiusuraPomeriggio"))]
+    parts = [x for x in parts if x]
+    return " / ".join(parts) if parts else None
 
 
 def prices_from_csv() -> dict[str, dict]:
@@ -245,6 +277,11 @@ def _station_blocks(
         if p["date"]:
             stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
             block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>{stale}"
+        # Orario MIMIT; se manca, quello inserito a mano in stations.json
+        # ("orari": {"1": "08:00-12:00", ..., "7": "chiuso"}, 1 = lunedì).
+        hours = p.get("hours") or (station.get("orari") or {}).get(str(now.isoweekday()))
+        if hours:
+            block += f"\n{pad}🕒 oggi {html_escape(str(hours))}"
         blocks.append(block)
     return blocks
 
@@ -278,7 +315,10 @@ def build_message(
         zones.setdefault(str(station.get("zona") or ""), []).append((station, p))
     for zone, items in zones.items():
         if len(zones) > 1 and zone:
-            blocks.append(f"📍 <b>{html_escape(zone.upper())}</b>")
+            # Dalla seconda sezione in poi una riga vuota in più (con un carattere
+            # invisibile, perché Telegram comprime le righe vuote consecutive).
+            gap = f"{BLANK}\n" if len(blocks) > 1 else ""
+            blocks.append(f"{gap}📍 <b>{html_escape(zone.upper())}</b>")
         blocks.extend(_station_blocks(items, previous, now, ranges))
     # Riga vuota tra un distributore e l'altro.
     return "\n\n".join(blocks)
