@@ -42,6 +42,13 @@ export function haversineKm(a, b) {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 }
 
+/** "SOCOGAS RETE CUNEO" -> "Socogas Rete Cuneo" (solo per nomi tutti maiuscoli). */
+export function prettyName(s) {
+  s = String(s || "").replace(/\s+/g, " ").trim();
+  if (s !== s.toUpperCase() || !/[A-Z]{3}/.test(s)) return s;
+  return s.toLowerCase().replace(/(^|[\s'(\-\/.])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
+}
+
 export function htmlEscape(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -105,7 +112,7 @@ export function parseStations(data, fuelKey, origin) {
     if (!p) continue;
     out.push({
       id: String(r.id ?? ""),
-      name: String(r.name || r.brand || "Distributore").trim(),
+      name: prettyName(r.name || r.brand || "Distributore"),
       brand: String(r.brand || "").trim(),
       address: String(r.address || "").trim(),
       lat,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCommand, buildReply, DEFAULTS, findBest, normalizeSettings, parseStations, totalCost } from "../src/logic.js";
+import { prettyName, applyCommand, buildReply, DEFAULTS, findBest, normalizeSettings, parseStations, totalCost } from "../src/logic.js";
 
 const origin = { lat: 44.3845, lng: 7.5427 }; // Cuneo
 
@@ -90,4 +90,9 @@ test("comandi", () => {
   assert.ok(applyCommand("/carburante", s).fuelPicker);
   assert.equal(applyCommand("/litri@MioBot 25", s).settings.litri, 25);
   assert.equal(normalizeSettings({ fuel: "x", litri: -3 }).fuel, "gpl");
+});
+
+test("nomi in maiuscolo resi leggibili", () => {
+  assert.equal(prettyName("SOCOGAS RETE  CUNEO OLMO PV 210310"), "Socogas Rete Cuneo Olmo Pv 210310");
+  assert.equal(prettyName("Enercoop Cuneo"), "Enercoop Cuneo");
 });
