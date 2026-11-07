@@ -1,0 +1,21 @@
+name: Bot distributore - prove
+
+on:
+  push:
+    paths: ["distributore-bot/**", ".github/workflows/distributore-bot.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: distributore-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Prova con i dati veri (Cuneo)
+        run: node test/live.mjs 44.3845 7.5427 gpl

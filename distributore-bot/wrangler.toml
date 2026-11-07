@@ -1,0 +1,11 @@
+name = "distributore-bot"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+# Impostazioni di ogni utente (carburante, litri, consumo, raggio).
+# Senza "id" il namespace viene creato in automatico al primo deploy.
+[[kv_namespaces]]
+binding = "SETTINGS"
+
+[observability]
+enabled = true
