@@ -277,8 +277,11 @@ def _station_blocks(
         if p["date"]:
             stale = " ⏳" if now - p["date"] > timedelta(days=STALE_DAYS) else ""
             block += f"\n{pad}<i>in vigore dal {p['date'].strftime('%d/%m %H:%M')}</i>{stale}"
-        if p.get("hours"):
-            block += f"\n{pad}🕒 oggi {html_escape(p['hours'])}"
+        # Orario MIMIT; se manca, quello inserito a mano in stations.json
+        # ("orari": {"1": "08:00-12:00", ..., "7": "chiuso"}, 1 = lunedì).
+        hours = p.get("hours") or (station.get("orari") or {}).get(str(now.isoweekday()))
+        if hours:
+            block += f"\n{pad}🕒 oggi {html_escape(str(hours))}"
         blocks.append(block)
     return blocks
 

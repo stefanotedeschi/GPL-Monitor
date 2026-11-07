@@ -9,5 +9,5 @@
   {"id": "54663", "label": "CHICCHI E BOLLICINE MOROZZO", "zona": "Cuneo - Mondovi'"},
   {"id": "61670", "label": "PAD SAINT-CHRISTOPHE", "zona": "Aosta"},
   {"id": "20870", "label": "VALPETROLI AOSTA", "zona": "Aosta"},
-  {"id": "57676", "label": "TAMOIL POLLEIN AUTOPORTO", "zona": "Aosta"}
+  {"id": "57676", "label": "TAMOIL POLLEIN AUTOPORTO", "zona": "Aosta", "orari": {"1": "08:00-12:00 / 15:00-19:00", "2": "08:00-12:00 / 15:00-19:00", "3": "08:00-12:00 / 15:00-19:00", "4": "08:00-12:00 / 15:00-19:00", "5": "08:00-12:00 / 15:00-19:00", "6": "08:00-12:00", "7": "chiuso"}}
 ]
